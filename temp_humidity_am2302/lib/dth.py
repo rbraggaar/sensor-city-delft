@@ -25,23 +25,23 @@ class DTHResult:
 class DTH:
     'DHT sensor (dht11, dht21,dht22) reader class for Pycom'
 
-    __pin = Pin('P3', mode=Pin.OPEN_DRAIN)
+    #__pin = Pin('P3', mode=Pin.OPEN_DRAIN)
     __dhttype = 0
 
     def __init__(self, pin, sensor=0):
         self.__pin = pin
         self.__dhttype = sensor
         self.__pin(1)
-        time.sleep(0.5)
+        time.sleep(1.0)
 
     def read(self):
-        time.sleep(1)
+        # time.sleep(1)
 
         # send initial high
         #self.__send_and_sleep(1, 0.025)
 
         # pull down to low
-        self.__send_and_sleep(0, 0.020)
+        self.__send_and_sleep(0, 0.019)
 
         # collect data into an array
         data = self.__collect_input()
