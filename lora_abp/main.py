@@ -55,9 +55,9 @@ def lora_tx(payload):
 
 
 # call this function to send one byte: 0A as hex
-def send_0a():
-    lora_tx(bytes([0x0a]))
+def send_hi_bytes():
+    lora_tx(bytes([0x68, 0x69]))
 
 
-def send_hi():
-    lora_tx('hello world')
+def send_hi_string():
+    lora_tx('hi')
