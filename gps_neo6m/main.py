@@ -5,6 +5,8 @@ from gps import GPS_UART_start
 from gps import NmeaParser
 from machine import RTC
 
+print('start main')
+time.sleep(5)
 # connect to GPS device
 com = GPS_UART_start()
 now = RTC()
@@ -21,7 +23,7 @@ while True:
         if (data[0:6] == b'$GPGGA'):
             place = NmeaParser()
             place.update(data)
-            print ("place", place.longitude,  ":",  place.latitude,  ":", place.fix_time)
+            print (place.latitude, place.longitude)
 
             # f_log = open('Lora_log','a')  # careful that log file fills up the memory
             # f_log.write(data + ' ' + str(lora.rssi()) + '\n\n')
