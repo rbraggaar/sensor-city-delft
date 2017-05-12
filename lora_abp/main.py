@@ -54,5 +54,10 @@ def lora_tx(payload):
     ack()
 
 
-def send():
-    lora_tx(bytes([0a]))
+# call this function to send one byte: 0A as hex
+def send_0a():
+    lora_tx(bytes([0x0a]))
+
+
+def send_hi():
+    lora_tx('hello world')
