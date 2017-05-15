@@ -1,29 +1,30 @@
-"""Basic LoRa example based on ABP (authorization by personalization)
-Setup your KPN details in config.py
+"""Basic LoRa example based on OTAA (Over The Air Authentication)
+Setup your TTN details in config.py
 """
 import time
 from network import LoRa
 import socket
 import binascii
-import struct
-import pycom
-import machine
 import config
 
 
 print('Main start')
 
-# LoRa details keys obtained from KPN
-dev_addr = struct.unpack(">l", binascii.unhexlify(config.DEV_ADDR))[0]
-nwks_key = binascii.unhexlify(config.NWKS_KEY)
-apps_key = binascii.unhexlify(config.APPS_KEY)
-
 # Setup LoRa
-lora = LoRa(mode=LoRa.LORAWAN, adr=True)
+lora = LoRa(mode=LoRa.LORAWAN)
 
-# join a network using ABP
-lora.join(activation=LoRa.ABP, auth=(dev_addr, nwks_key, apps_key), timeout=0)
-print("LoRa active: ", lora.has_joined())
+app_eui = binascii.unhexlify(config.APP_EUI)
+app_key = binascii.unhexlify(config.APP_KEY)
+
+lora.join(activation=LoRa.OTAA, auth=(app_eui, app_key), timeout=0)
+
+# wait until the module has joined the network
+print('Joining LoRa...')
+
+while not lora.has_joined():
+    time.sleep(2.5)
+
+print("LoRa joined")
 
 # create a LoRa socket
 lora_sock = socket.socket(socket.AF_LORA, socket.SOCK_RAW)
