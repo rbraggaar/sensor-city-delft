@@ -6,12 +6,13 @@ from network import LoRa
 import socket
 import binascii
 import config
+import pycom
 
 
 print('Main start')
 
 # Setup LoRa
-lora = LoRa(mode=LoRa.LORAWAN)
+lora = LoRa(mode=LoRa.LORAWAN, adr=True)
 
 app_eui = binascii.unhexlify(config.APP_EUI)
 app_key = binascii.unhexlify(config.APP_KEY)
@@ -21,11 +22,16 @@ lora.join(activation=LoRa.OTAA, auth=(app_eui, app_key), timeout=0)
 # wait until the module has joined the network
 print('Joining LoRa...')
 
+pycom.rgbled(0xFF)
+
 while not lora.has_joined():
     time.sleep(2.5)
 
+pycom.rgbled(0)
+
 print("LoRa joined")
 
+print("LoRa active: ", lora.has_joined())
 # create a LoRa socket
 lora_sock = socket.socket(socket.AF_LORA, socket.SOCK_RAW)
 
