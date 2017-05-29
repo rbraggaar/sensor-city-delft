@@ -1,65 +1,56 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
+"""
+!/usr/bin/python
+-*- coding: utf-8 -*-
 
-# Copyright (C) 2016-2017 Niccolo Rigacci <niccolo@rigacci.org>
-#
-# Data acquisition program for Plantower PMS5003 particulate
-# matter sensor. Developend and tested on the Raspberry Pi.
-# https://github.com/RigacciOrg/AirPi/tree/master/lib
-#
-# Features:
-#  * Handle sleep-down and awake of the sensor.
-#  * Wait some time before read, allow the sensor to settle.
-#  * Multiple read with average calculation.
-#  * Verify data checksum.
-#  * Handle communication errors.
-#  * Single read or endless loop.
-#  * Write data to status file (STATUS_FILE).
-#
-# === Single read ===
-# Mode suitable for a cronjob: set AVERAGE_READS_SLEEP
-# to -1. The sensor will be awakened before the reading, and
-# it will be put at sleep before program exit.
-#
-# === Endless loop ===
-# Set AVERAGE_READS_SLEEP to the acquiring interval (seconds).
-# If the interval is greather than three times the sensor's settling
-# time, the sensor will be put to sleep before the next read.
-#
-# PMS5003 specifications:
-# http://www.rigacci.org/wiki/lib/exe/fetch.php/doc/appunti/hardware/raspberrypi/plantower-pms5003-manual_v2-3.pdf
-#
-# Author        Niccolo Rigacci <niccolo@rigacci.org>
-# Version       0.1.2  2017-02-20
-#
-#   Modified by paulv (c) March 2017
-#   - changed bash type programming to RPi.GPIO
-#   - removed logging
-#   - removed software programming for the sensor, sleep function did not work
+Copyright (C) 2016-2017 Niccolo Rigacci <niccolo@rigacci.org>
+Adapted for Pycom by Rob Braggaar and Aidan Wyber
+
+Data acquisition program for Plantower PMS5003 particulate
+matter sensor. Developend and tested on the Raspberry Pi.
+https://github.com/RigacciOrg/AirPi/tree/master/lib
+
+Features:
+ * Handle sleep-down and awake of the sensor.
+ * Wait some time before read, allow the sensor to settle.
+ * Multiple read with average calculation.
+ * Verify data checksum.
+ * Handle communication errors.
+ * Single read or endless loop.
+ * Write data to status file (STATUS_FILE).
+
+=== Single read ===
+Mode suitable for a cronjob: set AVERAGE_READS_SLEEP
+to -1. The sensor will be awakened before the reading, and
+it will be put at sleep before program exit.
+
+=== Endless loop ===
+Set AVERAGE_READS_SLEEP to the acquiring interval (seconds).
+If the interval is greather than three times the sensor's settling
+time, the sensor will be put to sleep before the next read.
+
+PMS5003 specifications:
+http://www.rigacci.org/wiki/lib/exe/fetch.php/doc/appunti/hardware/raspberrypi/plantower-pms5003-manual_v2-3.pdf
+
+Author        Niccolo Rigacci <niccolo@rigacci.org>
+Version       0.1.2  2017-02-20
+
+  Modified by paulv (c) March 2017
+  - changed bash type programming to RPi.GPIO
+  - removed logging
+  - removed software programming for the sensor, sleep function did not work
+"""
 
 
-from __future__ import print_function
-
-try:
-    import serial
-except ImportError, e:
-    print("Python module serial not found, 'sudo apt-get install python-serial'")
-    sys.exit(0)
-
-import datetime
-import os
-import os.path
-import sys
+from machine import UART, Pin, RTC
 import time
-import RPi.GPIO as GPIO
+import sys
 
-GPIO.setmode(GPIO.BCM)
-# GPIO wired to RESET line of PMS5003 (pin 6)
-PMS5003_RESET_GPIO = 17
-GPIO.setup(PMS5003_RESET_GPIO, GPIO.OUT)
-# GPIO wired to SET line of PMS5003 (pin 3)
-PMS5003_SLEEP_GPIO = 27
-GPIO.setup(PMS5003_SLEEP_GPIO, GPIO.OUT)
+
+NTP = "pool.ntp.org"
+NTP_PERIOD_S = 3600
+
+PMS5003_RESET_GPIO = Pin('P10', mode=Pin.OUT)
+PMS5003_SLEEP_GPIO = Pin('P11', mode=Pin.OUT)
 
 # Make several reads, then calculate the average.
 AVERAGE_READS = 4  # for testing, was 16
@@ -74,7 +65,7 @@ MAX_FRAME_ERRORS = 10
 # Sensor settling after wakeup requires at least 30 seconds (sensor sepcifications).
 WAIT_AFTER_WAKEUP = 35
 # Total Response Time is 10 seconds (sensor specifications).
-MAX_TOTAL_RESPONSE_TIME = 12
+MAX_TOTAL_RESPONSE_TIME = 10
 
 
 # Normal data frame length.
@@ -87,118 +78,101 @@ SERIAL_TIMEOUT = 2.0
 
 # Calculate average on this output data.
 AVERAGE_FIELDS = ['data1', 'data2', 'data3', 'data4', 'data5',
-                  'data6', 'data7', 'data8', 'data9', 'data10', 'data11', 'data12']
+                  'data6', 'data7', 'data8', 'data9', 'data10',
+                  'data11', 'data12']
 
 # Status file where to save the last averaged reading.
 STATUS_FILE = 'pms5003.txt'
 
 
-#---------------------------------------------------------------
+def ntp_s():
+    global rtc
+    rtc = machine.RTC()
+    rtc.ntp_sync(NTP, update_period=NTP_PERIOD_S)
+
+
 # Convert a two bytes string into a 16 bit integer.
-#---------------------------------------------------------------
 def int16bit(b):
     return (ord(b[0]) << 8) + ord(b[1])
 
 
-#---------------------------------------------------------------
 # Return the hex dump of a buffer of bytes.
-#---------------------------------------------------------------
 def buff2hex(b):
     return " ".join("0x{:02x}".format(ord(c)) for c in b)
 
 
-#---------------------------------------------------------------
 # Make a list of averaged reads: (datetime, float, float, ...)
-#---------------------------------------------------------------
 def make_average(reads_list):
     average = []
-    average.append(datetime.datetime.utcnow())
+    average.append(time.time())
     for k in AVERAGE_FIELDS:
         average.append(float(sum(r[k] for r in reads_list)) / len(reads_list))
     return average
 
 
-#---------------------------------------------------------------
 # Convert the list created by make_average() to a string.
-#---------------------------------------------------------------
 def average2str(avg):
-    s = avg[0].strftime('%Y-%m-%d %H:%M:%S ')
+    s = str(avg[0])  # avg[0].strftime('%Y-%m-%d %H:%M:%S ')
     for f in avg[1:]:
-        s += ' %0.2f' % (f)
+        s += ' {:0.2f}'.format(f)
     return s
 
 
-#---------------------------------------------------------------
 # Send a SLEEP signal to sensor.
-#---------------------------------------------------------------
 def send_sensor_2_sleep():
-    print("Putting sensor to sleep")
-    GPIO.output(PMS5003_SLEEP_GPIO, GPIO.LOW)
-    return
+    print("Putting PMS sensor to sleep")
+    PMS5003_SLEEP_GPIO.value(0)
 
 
-#---------------------------------------------------------------
-# Send a WAKEUP signal to sensor.
-#---------------------------------------------------------------
+# Send a WAKEUP signal to sensor
 def wakeup_sensor():
-    print("Wake the sensor up")
-    GPIO.output(PMS5003_SLEEP_GPIO, GPIO.HIGH)
+    print("Wake the PMS sensor up")
+    PMS5003_SLEEP_GPIO.value(1)
     print("Waiting %d seconds for the sensor to get fresh samplings" % (WAIT_AFTER_WAKEUP,))
     time.sleep(WAIT_AFTER_WAKEUP)
-    return
 
 
-#---------------------------------------------------------------
-# Send a RESET signal to sensor.
-#---------------------------------------------------------------
+# Send a RESET signal to sensor
 def sensor_reset():
     print("Sending reset signal to sensor")
-    GPIO.output(PMS5003_RESET_GPIO, GPIO.LOW)
+    PMS5003_RESET_GPIO.value(0)
     time.sleep(0.5)
-    GPIO.output(PMS5003_RESET_GPIO, GPIO.HIGH)
+    PMS5003_RESET_GPIO.value(1)
     time.sleep(1.0)
-    return
 
 
-#---------------------------------------------------------------
-# Save averaged data.
-#---------------------------------------------------------------
+# Save averaged data
 def save_data(text):
-    tmpf = open(STATUS_FILE + '.tmp', 'w')
-    tmpf.write(text + '\n')
-    tmpf.flush()
-    os.fsync(tmpf.fileno())
-    tmpf.close()
-    os.rename(STATUS_FILE + '.tmp', STATUS_FILE)
-    return
+    with open(STATUS_FILE + '.log', 'a') as f:
+        f.write(text + '\n')
 
 
-#---------------------------------------------------------------
 # Read a data frame from the serial port.
 #  the first 4 bytes are:
 #  0x42, 0x4d, and two bytes as the frame lenght.
 # Return None on errors.
-#---------------------------------------------------------------
 def read_pm_frame(_port):
-
     frame = b''
-    start = datetime.datetime.utcnow()
+    start = time.time()
 
     while True:
-        b0 = _port.read()
+        b0 = _port.read(1)
         if b0 != '':
             if b0 != b'\x42':
                 # skip the legitimate starting byte, print the rest
-                print('Got char 0x%x from serial read()' % (ord(b0),))
+                try:
+                    print('Got char 0x%x from serial read()' % (ord(b0),))
+                except:
+                    print('Got no data')
         else:
             print('Timeout on serial read()')
 
         if b0 == b'\x42':  # found the start of a frame
-            b1 = _port.read()
+            b1 = _port.read(1)
             if b1 == b'\x4d':  # if second byte is OK, process the frame
                 # determine the length of the frame
-                b2 = _port.read()
-                b3 = _port.read()
+                b2 = _port.read(1)
+                b3 = _port.read(1)
                 frame_len = ord(b2) * 256 + ord(b3)
                 if frame_len == DATA_FRAME_LENGTH:
                     # Normal data frame.
@@ -230,17 +204,14 @@ def read_pm_frame(_port):
                     # Unexpected frame.
                     print("error: Unexpected frame length = %d" % (frame_len))
                     time.sleep(MAX_TOTAL_RESPONSE_TIME)
-                    _port.flushInput()
                     return None
 
-        if (datetime.datetime.utcnow() - start).seconds >= MAX_TOTAL_RESPONSE_TIME:
+        if (time.time() - start) >= MAX_TOTAL_RESPONSE_TIME:
             print("error: Timeout waiting data-frame signature")
             return None
 
 
-#---------------------------------------------------------------
 # Return the data frame in a verbose format.
-#---------------------------------------------------------------
 def data_frame_verbose(f):
     return (' PM1.0 (CF=1) μg/m³: {};\n'
             ' PM2.5 (CF=1) μg/m³: {};\n'
@@ -263,20 +234,16 @@ def data_frame_verbose(f):
                 f['reserved'], f['checksum']))
 
 
-#---------------------------------------------------------------
 # Main program.
-#---------------------------------------------------------------
 def main():
-
-    port = serial.Serial('/dev/ttyAMA0', baudrate=9600, timeout=SERIAL_TIMEOUT)
-
+    port = UART(1, 9600, pins=('P8', 'P9'))  # timeout=SERIAL_TIMEOUT
     wakeup_sensor()
 
-    reads_list = []
     error_count = 0
     error_total = 0
 
     while True:
+        reads_list = []
         try:
             rcv = read_pm_frame(port)
 
@@ -304,7 +271,7 @@ def main():
                 continue
 
             # Got a valid data-frame, assign variables.
-            res = {'timestamp': datetime.datetime.utcnow(),
+            res = {'timestamp': time.time(),
                    'data1':     int16bit(rcv[4:]),
                    'data2':     int16bit(rcv[6:]),
                    'data3':     int16bit(rcv[8:]),
@@ -331,7 +298,6 @@ def main():
                 average_str = average2str(average)
                 print("Average data: %s" % (average_str,))
                 save_data(average_str)
-                del reads_list[:]
 
                 if AVERAGE_READS_SLEEP < 0:
                     break
@@ -346,8 +312,6 @@ def main():
                     # Keep sensor awake and wait for next reads.
                     print("Waiting %d seconds before new read" % (AVERAGE_READS_SLEEP,))
                     time.sleep(AVERAGE_READS_SLEEP)
-                    port.flushOutput()
-                    port.flushInput()
 
         except KeyboardInterrupt:
             break
@@ -355,16 +319,14 @@ def main():
     try:
         print("Exiting main loop")
         send_sensor_2_sleep()
-        port.close()
+        port.deinit()
 
     except KeyboardInterrupt:
         print("\nCtrl-C  {0}".format(e))
     except Exception as e:
         print("Exception {0}".format(e))
     finally:
-        print("GPIO Cleanup")
-        GPIO.cleanup(PMS5003_RESET_GPIO)
-        sys.exit(0)
+        sys.exit()
 
 
 if __name__ == '__main__':
