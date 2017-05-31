@@ -1,7 +1,4 @@
 """
-!/usr/bin/python
--*- coding: utf-8 -*-
-
 Copyright (C) 2016-2017 Niccolo Rigacci <niccolo@rigacci.org>
 Adapted for Pycom by Rob Braggaar and Aidan Wyber
 
@@ -49,11 +46,15 @@ import sys
 NTP = "pool.ntp.org"
 NTP_PERIOD_S = 3600
 
-PMS5003_RESET_GPIO = Pin('P10', mode=Pin.OUT)
-PMS5003_SLEEP_GPIO = Pin('P11', mode=Pin.OUT)
+# TXD, RXD on Pycom
+PMS_TXD = 'P8'  # connect to PMS pin 4
+PMS_RXD = 'P9'  # connect to PMS pin 5
+
+PMS_RESET = Pin('P10', mode=Pin.OUT)  # connect to PMS pin 6
+PMS_SLEEP = Pin('P11', mode=Pin.OUT)
 
 # Make several reads, then calculate the average.
-AVERAGE_READS = 4  # for testing, was 16
+AVERAGE_READS = 4
 # Seconds to sleep before repeating averaged read. Use -1 to exit.
 AVERAGE_READS_SLEEP = -1
 
@@ -63,7 +64,7 @@ RESET_ON_FRAME_ERRORS = 2
 MAX_FRAME_ERRORS = 10
 
 # Sensor settling after wakeup requires at least 30 seconds (sensor sepcifications).
-WAIT_AFTER_WAKEUP = 35
+WAIT_AFTER_WAKEUP = 30
 # Total Response Time is 10 seconds (sensor specifications).
 MAX_TOTAL_RESPONSE_TIME = 10
 
@@ -91,18 +92,26 @@ def ntp_s():
     rtc.ntp_sync(NTP, update_period=NTP_PERIOD_S)
 
 
-# Convert a two bytes string into a 16 bit integer.
+def wakeup_sensor():
+    """Send a WAKEUP signal to sensor"""
+    print("Wake up PMS sensor")
+    PMS_SLEEP.value(1)
+    print("Settling sensor for next {} seconds".format(WAIT_AFTER_WAKEUP))
+    time.sleep(WAIT_AFTER_WAKEUP)
+
+
 def int16bit(b):
+    """Convert a two bytes string into a 16 bit integer"""
     return (ord(b[0]) << 8) + ord(b[1])
 
 
-# Return the hex dump of a buffer of bytes.
 def buff2hex(b):
+    """Return the hex dump of a buffer of bytes"""
     return " ".join("0x{:02x}".format(ord(c)) for c in b)
 
 
-# Make a list of averaged reads: (datetime, float, float, ...)
 def make_average(reads_list):
+    """Make a list of averaged reads: (datetime, float, float, ...)"""
     average = []
     average.append(time.time())
     for k in AVERAGE_FIELDS:
@@ -110,48 +119,42 @@ def make_average(reads_list):
     return average
 
 
-# Convert the list created by make_average() to a string.
 def average2str(avg):
+    """Convert the list created by make_average() to a string"""
     s = str(avg[0])  # avg[0].strftime('%Y-%m-%d %H:%M:%S ')
     for f in avg[1:]:
         s += ' {:0.2f}'.format(f)
     return s
 
 
-# Send a SLEEP signal to sensor.
 def send_sensor_2_sleep():
+    """Send a SLEEP signal to sensor"""
     print("Putting PMS sensor to sleep")
-    PMS5003_SLEEP_GPIO.value(0)
+    PMS_SLEEP.value(0)
 
 
-# Send a WAKEUP signal to sensor
-def wakeup_sensor():
-    print("Wake the PMS sensor up")
-    PMS5003_SLEEP_GPIO.value(1)
-    print("Waiting %d seconds for the sensor to get fresh samplings" % (WAIT_AFTER_WAKEUP,))
-    time.sleep(WAIT_AFTER_WAKEUP)
-
-
-# Send a RESET signal to sensor
 def sensor_reset():
+    """Send a RESET signal to sensor"""
     print("Sending reset signal to sensor")
-    PMS5003_RESET_GPIO.value(0)
+    PMS_RESET.value(0)
     time.sleep(0.5)
-    PMS5003_RESET_GPIO.value(1)
+    PMS_RESET.value(1)
     time.sleep(1.0)
 
 
-# Save averaged data
 def save_data(text):
+    """Save averaged data"""
     with open(STATUS_FILE + '.log', 'a') as f:
         f.write(text + '\n')
 
 
-# Read a data frame from the serial port.
-#  the first 4 bytes are:
-#  0x42, 0x4d, and two bytes as the frame lenght.
-# Return None on errors.
 def read_pm_frame(_port):
+    """
+    Read a data frame from the serial port.
+    The first 4 bytes are:
+     0x42, 0x4d, and two bytes as the frame length
+    Return None on errors
+    """
     frame = b''
     start = time.time()
 
@@ -163,7 +166,7 @@ def read_pm_frame(_port):
                 try:
                     print('Got char 0x%x from serial read()' % (ord(b0),))
                 except:
-                    print('Got no data')
+                    pass
         else:
             print('Timeout on serial read()')
 
@@ -211,8 +214,8 @@ def read_pm_frame(_port):
             return None
 
 
-# Return the data frame in a verbose format.
 def data_frame_verbose(f):
+    """Return the data frame in a verbose format"""
     return (' PM1.0 (CF=1) μg/m³: {};\n'
             ' PM2.5 (CF=1) μg/m³: {};\n'
             ' PM10  (CF=1) μg/m³: {};\n'
@@ -234,9 +237,9 @@ def data_frame_verbose(f):
                 f['reserved'], f['checksum']))
 
 
-# Main program.
 def main():
-    port = UART(1, 9600, pins=('P8', 'P9'))  # timeout=SERIAL_TIMEOUT
+    port = UART(1, 9600, pins=(PMS_TXD, PMS_RXD))  # timeout=SERIAL_TIMEOUT
+
     wakeup_sensor()
 
     error_count = 0
