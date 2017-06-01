@@ -19,7 +19,7 @@ while True:
     signal_max = 0  # max signal
     signal_min = 1024  # min signal
 
-    while (chrono.read_ms() - start_time) < SAMPLE_WINDOW:  # 50 ms
+    while (chrono.read_ms() - start_time) <= SAMPLE_WINDOW:  # 50 ms
         sample = apin()  # read an analog value
 
         if sample > signal_max:

@@ -98,6 +98,7 @@ def wakeup_sensor():
     PMS_SLEEP.value(1)
     print("Settling sensor for next {} seconds".format(WAIT_AFTER_WAKEUP))
     time.sleep(WAIT_AFTER_WAKEUP)
+    print("PMS ready")
 
 
 def int16bit(b):
@@ -160,6 +161,7 @@ def read_pm_frame(_port):
 
     while True:
         b0 = _port.read(1)
+        print("reading data: ", b0)
         if b0 != '':
             if b0 != b'\x42':
                 # skip the legitimate starting byte, print the rest
