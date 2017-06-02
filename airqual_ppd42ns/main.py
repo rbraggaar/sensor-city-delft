@@ -35,9 +35,9 @@ while True:
     low_pulse_occ = 0
     # concentration based on LPO time and characteristics graph
     concentration = 0
-    while time.now() - starttime <= SAMPLETIME_MS:  # in sampling window
+    while time.time() - starttime <= SAMPLETIME_MS:  # in sampling window
         # check if pin is low, start timing
-        if INPUT_PIN.value() == 0:
+        if IN_PIN.value() == 0:
             chrono.start()
         # get duration of low pulse and reset timer
         else:
