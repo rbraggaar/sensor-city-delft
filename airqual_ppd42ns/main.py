@@ -28,7 +28,7 @@ chrono = Timer.Chrono()
 
 while True:
     # start of new sampling window
-    starttime = time.now()  # current time
+    starttime = time.time()  # current time
     # reflects on which level LPO Time takes up the whole sample time
     ratio = 0
     #  Lo Pulse Occupancy Time(LPO Time) in microseconds
@@ -37,7 +37,7 @@ while True:
     concentration = 0
     while time.now() - starttime <= SAMPLETIME_MS:  # in sampling window
         # check if pin is low, start timing
-        if INPUT_PIN.value() = 0:
+        if INPUT_PIN.value() == 0:
             chrono.start()
         # get duration of low pulse and reset timer
         else:
