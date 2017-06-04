@@ -45,8 +45,11 @@ while True:
         # get duration of low pulse and reset timer
         else:
             low_pulse_occ += chrono.read_us()
+            chrono.stop()
             chrono.reset()
 
+    chrono.stop()
+    chrono.reset()
     # ratio: percentage of low pulses over the sampling window
     ratio = low_pulse_occ / (SAMPLETIME_S * 1e+6)
     concentration = 1.1 * (ratio ** 3) - 3.8 * (ratio ** 2) + 520 * ratio + 0.62
