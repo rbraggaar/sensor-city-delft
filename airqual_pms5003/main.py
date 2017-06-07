@@ -1,6 +1,6 @@
 """
-Author: Rob Braggaar
 Micropython library for PMS5003
+by Rob Braggaar
 """
 import time
 import struct
@@ -13,6 +13,8 @@ class PMS5003():
             Lopy     :: PMS
             TXD: P9  :: RXD: P4
             RXD: P10 :: TXD: P5
+            SET: P11 :: SET: P3
+            RESET: P12 :: RESET: P6
         """
         self.STARTUP_TIME = 30  # startup time
         self.port = UART(1, 9600, parity=None, stop=1, pins=('P9', 'P10'))
@@ -73,4 +75,5 @@ class PMS5003():
 
 
 pms = PMS5003()
+pms.set_pms()
 print(pms.read_pms())
